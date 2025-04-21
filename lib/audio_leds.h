@@ -1,9 +1,10 @@
+// libs do pico sdk necessárias
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/pio.h" 
-#include <math.h>
+#include <math.h> // para algumas funções usadas no cálculo da duração de notas
 #include <stdlib.h>  // para rand() e srand()
 #include <time.h>    // para time()
 
@@ -21,8 +22,7 @@
 #define LED_BLUE_PIN 12                   
 #define LED_RED_PIN 13       
 
-const int* melodia;
-
+// arrays de melodias com valores das notas e suas durações
 const int melody_mario_bros[] = {
     659, 8, 659, 8, 0, 8, 659, 8, 0, 8, 523, 8, 659, 8,
     784, 4, 0, 4, 392, 8, 0, 4, 523, -4, 392, 8, 0, 4,
@@ -37,7 +37,6 @@ const int melody_mario_bros[] = {
 
 
 int melody_pac_man[] = {
-    // Pacman
     494, 16, 988, 16, 740, 16, 622, 16, 
     988, 32, 740, -16, 622, 8, 523, 16,
     1047, 16, 1568, 16, 1319, 16, 1047, 32, 1568, -16, 1319, 8,
@@ -62,15 +61,18 @@ bool leds_preenchidos[LED_COUNT] = {
     1, 1, 1, 1, 1
 };
 
-
+// Para mandar um valor grb de 32bits(mas so 24 sendo usados) para a maquina de estado 0 do bloco 0 do PIO
 static inline void put_pixel(uint32_t pixel_grb)
 {
     pio_sm_put_blocking(pio0, 0, pixel_grb << 8u);
 }
+
+// cria um valor grb de 32 bits
 static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b)
 {
     return ((uint32_t)(r) << 8) | ((uint32_t)(g) << 16) | (uint32_t)(b);
 }
+
 void set_one_led(uint8_t r, uint8_t g, uint8_t b, bool numero_a_ser_desenhado[])
 {
     // Define a cor com base nos parâmetros fornecidos
@@ -103,12 +105,12 @@ void play_note(int pin, int freq, int duracao) {
     uint8_t r,g,b;
     // Inicializa o gerador de números aleatórios com uma semente baseada no tempo
     srand(time(NULL)); 
+    // gera os valores aleatórios rgb
     r = rand() % 256;
     g = rand() % 256;
     b = rand() % 256;
-    if (freq == 0) { // Se não houver frequência so espere pela duração fornecida
+    if (freq == 0) { // Se não houver frequência so espere pela duração fornecida e desliga todos os leds
         set_one_led(0,0,0,leds_preenchidos);
-        gpio_put(LED_RED_PIN,0);
         sleep_ms(duracao);
         return;
     }
@@ -119,10 +121,10 @@ void play_note(int pin, int freq, int duracao) {
     pwm_set_wrap(slice_num, wrap - 1); // Define o wrap no slice correspondente
     pwm_set_clkdiv(slice_num, clkdiv); // Define o divisor de clock no slice correspondente
     pwm_set_gpio_level(pin, wrap / 2);// Define o duty cicle a 50%
-    set_one_led(r,g,b,leds_preenchidos);
+    set_one_led(r,g,b,leds_preenchidos); // pisca a cor aleatória por 90% do tempo
     sleep_ms(duracao * 0.9); // Toca a nota por 90% da duração
     pwm_set_gpio_level(pin, 0); // Define o duty cicle a 0%
-    set_one_led(0,0,0,leds_preenchidos);
+    set_one_led(0,0,0,leds_preenchidos);// desliga os leds por 10% do tempo
     sleep_ms(duracao * 0.1); // Pausa por 10% da durção
 }
 
@@ -130,11 +132,14 @@ void play_note(int pin, int freq, int duracao) {
 int play_melody(char melody) {
     configure_buzzer(BUZZER_PIN_A); // Configura o pino do buzzer
 
-    const int* melodia;
-    int num_notas;
-    int whole_note_duration;
+    const int* melodia; // ponteiro para inteiros constantes em um array
+    int num_notas; // Quantidade de notas
+    int whole_note_duration;// Duração das notas
 
     // Escolhe qual melodia usar com base no parâmetro
+    // melodia recebe o array de pares de melodia e duração a ser usado
+    // num_notas calcula quantos elementos existem no array baseado na quantidade total de bytes dividida pelo tamanho de apenas 
+    // um elemento, neste caso de um 1 inteiro
     switch (melody) {
         case 'A':
             melodia = melody_mario_bros;
@@ -150,16 +155,19 @@ int play_melody(char melody) {
             return -1; // Código de erro: melodia inválida
     }
 
+    // pega a nota e seu divisor de duração
     for (int i = 0; i < num_notas * 2; i += 2) {
         int freq = melodia[i];
         int divisor = melodia[i + 1];
         int duracao;
 
+        // Se o divisor for positivo a nota dura uma fração
+        // se ele for negativo a nota dura 1.5x da duração normal
         if (divisor > 0)
             duracao = whole_note_duration / divisor;
         else
             duracao = (whole_note_duration / abs(divisor)) * 1.5;
-
+        // toca a nota individual e pisca o led
         play_note(BUZZER_PIN_A, freq, duracao);
     }
 
